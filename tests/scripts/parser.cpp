@@ -6,9 +6,10 @@
 #include "compound-config/compound-config.hpp"
 #include "util/args.hpp"
 
-#include "timeloopX/problem/problem.hpp"
-#include "timeloopX/mapping/mapping.hpp"
-#include "timeloopX/loop-analysis/nest-analysis.hpp"
+#include "tileflow/problem/problem.hpp"
+#include "tileflow/mapping/mapping.hpp"
+#include "tileflow/loop-analysis/nest-analysis.hpp"
+#include "tileflow/model/topology.hpp"
 
 extern bool gTerminateEval;
 
@@ -34,7 +35,7 @@ int main(int argc, char* argv[])
   auto root = config->getRoot();
   
   auto problem = root.lookup("problem");
-  problem::TimeloopX::Workloads workloads;
+  problem::TileFlow::Workloads workloads;
   
 
   config::CompoundConfigNode arch;
@@ -52,25 +53,39 @@ int main(int argc, char* argv[])
 
   model::Engine::Specs arch_specs_ = model::Engine::ParseSpecs(arch, is_sparse_topology);
 
-  std::cout << "level names: ";
-  for (auto name: arch_specs_.topology.LevelNames())
-    std::cout << name << ",";
-  std::cout << std::endl;
+  std::cout << "Begin ParseWorkload..." << std::endl;
+  problem::TileFlow::ParseWorkloads(problem, workloads);
 
-  problem::TimeloopX::ParseWorkloads(problem, workloads);
-
-  
-  auto mapping = mapping::TimeloopX::ParseAndConstruct(root.lookup("mapping"), arch_specs_, workloads);
+  auto mapping = mapping::TileFlow::ParseAndConstruct(root.lookup("mapping"), arch_specs_, workloads);
   
   mapping.Print();
   
   workloads.Print();
 
-  analysis::TimeloopX::NestAnalysis analysis(workloads, mapping);
-  analysis.get_tilewise_workloads();
+  problem::Workload::SetCurrShape(&workloads.get_shape());
+
+  model::TileFlow::Topology topology_;
+
+  std::cout << "Begin Spec..." << std::endl; 
+  topology_.Spec(arch_specs_.topology);
+
+  analysis::TileFlow::NestAnalysis analysis(workloads, mapping, arch_specs_);
+  analysis.analyze();
   analysis.Print();
+
+  std::cout << "Begin eval..." << std::endl; 
+
+  topology_.eval(mapping, analysis);
 
   std::cout << "Parser check passed!" << std::endl;
 
   return 0;
 }
+
+/**
+- ComputePartitionSizes
+  - partition_size = partition_size * tile_nest[cur].size / tile_nest[cur].size or master spatial level size
+- ComputeParentAccessShare:
+  - Compute the accesses by each fanout;
+  - accumulated in parent_access_share;
+*/
